@@ -1,0 +1,22 @@
+# Local machine state and credentials
+config.json
+shortcuts.json
+active-release.json
+worker-*.json
+supervisor-*.json
+lifecycle-*.json
+diagnostics.jsonl*
+*.log
+*.log.*
+*.lnk
+*.previous.exe
+backup/
+releases/
+upgrade-pending/
+__pycache__/
+*.pyc
+*.test.exe
+*.prof
+*.pprof
+*.trace
+dist/
