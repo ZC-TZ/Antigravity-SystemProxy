@@ -25,6 +25,27 @@ type applicationLifetime struct {
 	absentSince time.Time
 	nextAttempt time.Time
 	retryDelay  time.Duration
+	updateSince time.Time
+}
+
+func (s *applicationLifetime) absentAfterUpdate(now time.Time, present bool, err error, missing bool) bool {
+	if present || err != nil {
+		s.updateSince = time.Time{}
+		return s.absentLongEnough(now, present, err)
+	}
+	if missing {
+		if s.updateSince.IsZero() {
+			s.updateSince = now
+		}
+		absent := s.absentLongEnough(now, false, nil)
+		return absent && now.Sub(s.updateSince) >= applicationUpdateGrace
+	}
+	if !s.updateSince.IsZero() {
+		s.updateSince = time.Time{}
+		s.absentSince = now
+		return false
+	}
+	return s.absentLongEnough(now, false, nil)
 }
 
 func (s *applicationLifetime) absentLongEnough(now time.Time, present bool, err error) bool {
@@ -242,6 +263,8 @@ func (a *app) followApplication() error {
 	journal.emit(historyEvent{Kind: "application_follow_started", Reason: "all_matching_instances"})
 	image := canonical(a.cfg.Application)
 	lifetime := applicationLifetime{}
+	var nextPathCheck time.Time
+	updateObserved := false
 	for {
 		time.Sleep(time.Second)
 		release, lockErr := a.lifecycleLock(0)
@@ -255,7 +278,35 @@ func (a *app) followApplication() error {
 			}
 			now := time.Now()
 			present, scanErr := applicationPresent(image)
-			if lifetime.absentLongEnough(now, present, scanErr) {
+			_, pathErr := os.Stat(image)
+			missing := os.IsNotExist(pathErr)
+			if !present && scanErr == nil && missing && !now.Before(nextPathCheck) {
+				nextPathCheck = now.Add(10 * time.Second)
+				// A launcher may already have recovered the path while this
+				// monitor was retaining the old process generation.
+				fresh, loadErr := loadApp()
+				if loadErr == nil && fresh.cfg.Port == a.cfg.Port && !strings.EqualFold(fresh.cfg.Application, a.cfg.Application) {
+					a.cfg.Application = fresh.cfg.Application
+				}
+				if err := a.waitForApplication(600*time.Millisecond, registeredApplicationPaths, validApplicationReplacement); err == nil {
+					image = canonical(a.cfg.Application)
+					present, scanErr = applicationPresent(image)
+					_, pathErr = os.Stat(image)
+					missing = os.IsNotExist(pathErr)
+				}
+			}
+			if missing && !updateObserved {
+				journal.emit(historyEvent{Kind: "application_update_wait", Reason: "configured_image_temporarily_missing"})
+				updateObserved = true
+			}
+			if !missing && updateObserved {
+				journal.emit(historyEvent{Kind: "application_update_image_restored", Reason: "configured_image_available"})
+				updateObserved = false
+			}
+			if pathErr != nil && !os.IsNotExist(pathErr) {
+				scanErr = pathErr
+			}
+			if lifetime.absentAfterUpdate(now, present, scanErr, missing) {
 				if a.runtimeQuiet() {
 					// A second scan closes the enumeration-to-stop window. Startup
 					// through our launcher is serialized by the same mutex.

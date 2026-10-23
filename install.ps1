@@ -328,7 +328,13 @@ if ($AntigravityPath) {
     foreach ($registryRoot in @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall')) {
         foreach ($key in @(Get-ChildItem -LiteralPath $registryRoot -ErrorAction SilentlyContinue)) {
             $record = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
-            if ($record.DisplayName -match '^(Google )?Antigravity$' -and $record.InstallLocation) { $appCandidates += Join-Path $record.InstallLocation 'Antigravity.exe' }
+            if ($record.DisplayName -match '^(Google )?Antigravity(?:\s+\d[\w.\-+]*)?$') {
+                if ($record.InstallLocation) { $appCandidates += Join-Path $record.InstallLocation 'Antigravity.exe' }
+                if ($record.DisplayIcon) {
+                    $iconPath = ([string]$record.DisplayIcon -replace ',\s*-?\d+\s*$','').Trim().Trim('"')
+                    if ([IO.Path]::IsPathRooted($iconPath) -and [IO.Path]::GetFileName($iconPath) -eq 'Antigravity.exe') { $appCandidates += $iconPath }
+                }
+            }
         }
     }
 }

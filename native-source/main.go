@@ -36,9 +36,6 @@ func proxyEnvironment(parent []string, port int) []string {
 }
 
 func (a *app) launch(args []string) error {
-	if _, e := os.Stat(a.cfg.Application); e != nil {
-		return errors.New("Antigravity executable not found; rerun install.cmd")
-	}
 	release, e := a.lifecycleLock(20 * time.Second)
 	if e != nil {
 		return e
@@ -46,6 +43,9 @@ func (a *app) launch(args []string) error {
 	defer release()
 	if a.lifecycleMaintenancePending() {
 		return errors.New("interrupted installation detected; rerun install.cmd before starting Antigravity")
+	}
+	if err := a.waitForApplication(10*time.Second, registeredApplicationPaths, validApplicationReplacement); err != nil {
+		return err
 	}
 	if e := a.ensure(); e != nil {
 		return e
@@ -96,6 +96,8 @@ func run() error {
 		mode = os.Args[1]
 	}
 	switch mode {
+	case "--application-check":
+		return a.applicationCheck()
 	case "--follow-app":
 		return a.startFollower()
 	case "--watch-app":

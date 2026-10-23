@@ -17,7 +17,7 @@ import (
 
 const marker = "Antigravity-SystemProxy-v5"
 
-const revision = "5.26"
+const revision = "5.27"
 
 const healthPath = "/__antigravity_system_proxy_health__"
 
