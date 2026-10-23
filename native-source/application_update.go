@@ -219,6 +219,7 @@ func (a *app) waitForApplication(timeout time.Duration, candidates func() []stri
 	deadline := time.Now().Add(timeout)
 	var selected string
 	stableSince := time.Now()
+	var selectionErr error
 	for {
 		info, err := os.Stat(a.cfg.Application)
 		if err == nil {
@@ -230,18 +231,22 @@ func (a *app) waitForApplication(timeout time.Duration, candidates func() []stri
 		if !os.IsNotExist(err) {
 			return err
 		}
-		path, err := selectApplicationReplacement(candidates(), validate)
-		if err != nil {
-			return err
-		}
+		// Give the configured installation the full replacement grace before
+		// migrating to another registered copy. Ambiguity must not prevent an
+		// in-place updater from restoring the original image during that grace.
+		path, candidateErr := selectApplicationReplacement(candidates(), validate)
+		selectionErr = candidateErr
 		if path != selected {
 			selected = path
 			stableSince = time.Now()
 		}
-		if selected != "" && time.Since(stableSince) >= 500*time.Millisecond {
-			return a.persistApplicationReplacement(selected)
-		}
 		if !time.Now().Before(deadline) {
+			if selectionErr != nil {
+				return selectionErr
+			}
+			if selected != "" && time.Since(stableSince) >= 500*time.Millisecond {
+				return a.persistApplicationReplacement(selected)
+			}
 			return fmt.Errorf("Antigravity executable is unavailable after update grace; finish its update or rerun install.cmd with -AntigravityPath")
 		}
 		time.Sleep(200 * time.Millisecond)

@@ -6,11 +6,14 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func TestApplicationRegistrationAndIconParsing(t *testing.T) {
@@ -115,6 +118,80 @@ func TestApplicationWaitsForTransientImageReplacement(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestApplicationOriginalRestoreWinsOverOtherInstallations(t *testing.T) {
+	for _, ambiguous := range []bool{false, true} {
+		t.Run(fmt.Sprint(ambiguous), func(t *testing.T) {
+			a := applicationRecoveryTestApp(t)
+			original := a.cfg.Application
+			os.MkdirAll(filepath.Dir(original), 0700)
+			before, _ := os.ReadFile(filepath.Join(a.root, "config.json"))
+			done := make(chan error, 1)
+			go func() {
+				time.Sleep(800 * time.Millisecond)
+				done <- os.WriteFile(original, []byte("restored original"), 0600)
+			}()
+			candidates := func() []string {
+				if ambiguous {
+					return []string{filepath.Join(a.root, "other-one", "Antigravity.exe"), filepath.Join(a.root, "other-two", "Antigravity.exe")}
+				}
+				return []string{filepath.Join(a.root, "other-one", "Antigravity.exe")}
+			}
+			err := a.waitForApplication(1200*time.Millisecond, candidates, func(string) bool { return true })
+			writeErr := <-done
+			if err != nil || writeErr != nil || a.cfg.Application != original {
+				t.Fatal(err, writeErr, a.cfg.Application)
+			}
+			after, _ := os.ReadFile(filepath.Join(a.root, "config.json"))
+			if !bytes.Equal(before, after) {
+				t.Fatal("temporary update migrated configuration")
+			}
+		})
+	}
+}
+
+func TestApplicationMonitorDefersPathMigration(t *testing.T) {
+	now := time.Now()
+	s := applicationLifetime{}
+	if s.canRecoverApplicationPath(now) {
+		t.Fatal("unobserved update permits migration")
+	}
+	s.absentAfterUpdate(now, false, nil, true)
+	if s.canRecoverApplicationPath(now.Add(29 * time.Second)) {
+		t.Fatal("migrated before restart grace")
+	}
+	if !s.canRecoverApplicationPath(now.Add(30 * time.Second)) {
+		t.Fatal("recovery never enabled")
+	}
+	s.absentAfterUpdate(now.Add(31*time.Second), true, nil, false)
+	if s.canRecoverApplicationPath(now.Add(time.Minute)) {
+		t.Fatal("old update observation reused")
+	}
+}
+
+func TestApplicationRegistryExpandablePaths(t *testing.T) {
+	advapi := syscall.NewLazyDLL("advapi32.dll")
+	name := fmt.Sprintf(`Software\AntigravitySystemProxy-Test-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	var key syscall.Handle
+	status, _, _ := advapi.NewProc("RegCreateKeyExW").Call(uintptr(syscall.HKEY_CURRENT_USER), uintptr(unsafe.Pointer(wide(name))), 0, 0, 0, 0xf003f, 0, uintptr(unsafe.Pointer(&key)), 0)
+	if status != 0 {
+		t.Fatal(status)
+	}
+	defer func() {
+		syscall.RegCloseKey(key)
+		advapi.NewProc("RegDeleteKeyW").Call(uintptr(syscall.HKEY_CURRENT_USER), uintptr(unsafe.Pointer(wide(name))))
+	}()
+	t.Setenv("AG_APPLICATION_REGISTRY_FIXTURE", t.TempDir())
+	value, _ := syscall.UTF16FromString(`%AG_APPLICATION_REGISTRY_FIXTURE%\Antigravity.exe`)
+	status, _, _ = advapi.NewProc("RegSetValueExW").Call(uintptr(key), uintptr(unsafe.Pointer(wide("DisplayIcon"))), 0, 2, uintptr(unsafe.Pointer(&value[0])), uintptr(len(value)*2))
+	if status != 0 {
+		t.Fatal(status)
+	}
+	expected := filepath.Join(os.Getenv("AG_APPLICATION_REGISTRY_FIXTURE"), "Antigravity.exe")
+	if got := registryApplicationValue(key, "DisplayIcon"); got != expected {
+		t.Fatalf("expandable path: got %q want %q", got, expected)
 	}
 }
 

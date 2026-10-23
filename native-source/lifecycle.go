@@ -19,6 +19,10 @@ import (
 
 const applicationGrace = 30 * time.Second
 
+func (s *applicationLifetime) canRecoverApplicationPath(now time.Time) bool {
+	return !s.updateSince.IsZero() && now.Sub(s.updateSince) >= applicationGrace
+}
+
 // All comparisons use monotonic times. Unknown process-enumeration results
 // cancel the absence countdown instead of risking shutdown of a live app.
 type applicationLifetime struct {
@@ -280,7 +284,7 @@ func (a *app) followApplication() error {
 			present, scanErr := applicationPresent(image)
 			_, pathErr := os.Stat(image)
 			missing := os.IsNotExist(pathErr)
-			if !present && scanErr == nil && missing && !now.Before(nextPathCheck) {
+			if !present && scanErr == nil && missing && lifetime.canRecoverApplicationPath(now) && !now.Before(nextPathCheck) {
 				nextPathCheck = now.Add(10 * time.Second)
 				// A launcher may already have recovered the path while this
 				// monitor was retaining the old process generation.

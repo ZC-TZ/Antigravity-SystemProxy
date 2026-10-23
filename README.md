@@ -2,7 +2,7 @@
 
 **下载安装包：** [最新 Windows 安装包](https://github.com/ZC-TZ/Antigravity-SystemProxy/releases/latest/download/Antigravity-SystemProxy-Windows.zip)（完整解压后运行 `install.cmd`）。
 
-让 Antigravity 在开启 Windows 系统代理时使用代理，关闭系统代理时直接连接。当前版本：**v5.27**，适用于 **Windows 10/11 x64**。
+让 Antigravity 在开启 Windows 系统代理时使用代理，关闭系统代理时直接连接。当前版本：**v5.28**，适用于 **Windows 10/11 x64**。
 
 **首次使用只需：完整解压安装包 → 退出 Antigravity → 在文件资源管理器中双击 `install.cmd` → 从 `Antigravity (System Proxy)` 启动。**
 
@@ -167,7 +167,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -RestartEn
 ### 更新 Antigravity、移动程序或换电脑
 
 - Antigravity 更新可能改写官方快捷方式；以后仍使用独立的代理入口。
-- 更新替换程序文件时，代理入口最多等待约 10 秒；文件恢复后继续启动。监护发现应用及程序文件都暂时消失时，最多提供 2 分钟更新宽限，恢复后再按正常 30 秒规则判断退出。仍有连接时继续等待其自然结束。
+- 更新替换程序文件时，代理入口优先给原路径约 10 秒恢复时间；期间原文件恢复就继续启动，即使登记中存在其他安装或多个候选也不提前切换。监护发现应用及程序文件都暂时消失时，最多提供 2 分钟更新宽限，前 30 秒不迁移路径，恢复后再按正常 30 秒规则判断退出。仍有连接时继续等待其自然结束。
 - 原程序路径不存在时，启动器会从 Windows 已登记的安装位置寻找替代，检查 EXE 与应用包标识；只有一个有效候选才原子更新配置，保留其他设置。它不会扫描整个磁盘，也不会覆盖仍存在的原路径。多安装、未登记、包结构变化或恢复失败时，等更新结束后重新安装，指定正确的 `-AntigravityPath`。
 - 更新器直接重启应用时，可能不保留代理参数或环境。工具不会自动关闭应用重新注入，以免中断任务。更新完成后建议保存任务、完全退出，再从 **Antigravity (System Proxy)** 打开。
 - 怀疑更新后未走代理时，在实际安装目录运行 `./AntigravitySystemProxy.exe --application-check | Out-Host`。它报告程序存在状态、已登记候选和主进程是否带有预期代理参数；不返回完整命令行或凭据。**缺少参数不能证明环境变量也丢失；存在参数也不能证明每个网络组件都遵守代理。**
